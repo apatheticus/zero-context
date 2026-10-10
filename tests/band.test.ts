@@ -15,11 +15,11 @@ const mount = ($: Engine, surface: (typeof SURFACES)[number], over: Record<strin
 // Everything the band drew, Svg sources and alts included.
 const drawn = async (ui: { drawn: () => Promise<unknown> }): Promise<string> => JSON.stringify(await ui.drawn())
 
-type World = { clock: ReturnType<typeof mock.clock>; stepTokens: number; toasts: string[]; commands: string[]; compacts: string[]; writes: { path: string; text: string }[] }
+type World = { clock: ReturnType<typeof mock.clock>; isHeadless: boolean; stepTokens: number; toasts: string[]; commands: string[]; compacts: string[]; writes: { path: string; text: string }[] }
 
 // The engine's side of each call the plugin makes: what core would answer.
 const core = (on: On, store: Record<string, unknown> = {}): World => {
-  const w: World = { clock: mock.clock(on, { now: NOW }), stepTokens: 0, toasts: [], commands: [], compacts: [], writes: [] }
+  const w: World = { clock: mock.clock(on, { now: NOW }), isHeadless: false, stepTokens: 0, toasts: [], commands: [], compacts: [], writes: [] }
   mock.store(on, store)
   mock.env(on, { HOME })
   on('ui.render', async () => ({ type: 'Box' }) as never)
@@ -40,7 +40,9 @@ const core = (on: On, store: Record<string, unknown> = {}): World => {
     return { text: '' }
   })
   // The kit hands on the plugin's own args; the engine stamps `trigger: 'plugin'` live.
-  on('session.compact', async (_$, e) => {
+  on('session.compact', async (_$, e, next) => {
+    // The kit cannot reject with the engine's headless refusal; its own core, which compacts nothing, stands in.
+    if (w.isHeadless) return next(e)
     w.compacts.push(e.instructions ?? 'compact')
     return { messages: [{ role: 'user', text: 'summary', toolUses: [] }] as never, tokensAfter: 20_000 }
   })
@@ -127,6 +129,20 @@ test('Compact runs a plugin compaction in one press', async ($, on) => {
   // The summary's size stands in until the next reply.
   const ui = await mount($, 'terminal')
   expect(await drawn(ui)).toContain('20k/1M')
+  await ui.unmount()
+})
+
+test('a headless host compacts through a queued /compact', async ($, on) => {
+  const w = core(on)
+  w.isHeadless = true
+  await start($)
+  await measure($, 400_000)
+  const ui = await mount($, 'desktop')
+  await ui.press({ key: 'context-compact' })
+  expect(w.commands).toEqual(['compact'])
+  expect(w.toasts).toEqual([])
+  // The fill is unknown until the next reply.
+  expect(await drawn(ui)).toContain('—/1M')
   await ui.unmount()
 })
 

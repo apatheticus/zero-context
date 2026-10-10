@@ -56,7 +56,10 @@ const ctxOf = (c: SessionContextUsage, autoCompact: number | undefined, at: numb
 
 const riskNow = (c: Ctx | null): number => (c?.tokens === undefined ? 0 : riskOf(c.tokens, knees, c.autoCompact))
 
-const reasonText = (r: { reason: string; status?: number | null }): string =>
+// An engine error, without the `zero-context: ` the engine puts in front: the toast says it already.
+const errText = (err: unknown): string => (err instanceof Error ? err.message : String(err)).replace(/^zero-context: /, '')
+
+const reasonText = (r:{ reason: string; status?: number | null }): string =>
   r.reason === 'nothing-to-fork'
     ? 'there is no reply to hand off yet'
     : r.reason === 'api-error'
@@ -228,14 +231,32 @@ async function compact($: EngineInterface): Promise<string> {
       return tokens === undefined ? { ...rest, at } : { ...rest, at, tokens, percent: prev.window ? (tokens / prev.window) * 100 : 0 }
     })
     return 'Compacted.'
-  } catch (err) {
-    // It rejects while a turn runs, among other things.
-    const why = `Compact failed: ${err instanceof Error ? err.message : String(err)}`
-    $.ui.toast(why)
-    return why
+  } catch {
+    // A headless host (the desktop app, the SDK) refuses it: there a compaction
+    // runs only as a `/compact` turn. Queue that, as if typed; if it fails too,
+    // the toast says why.
+    return await compactAsCommand($)
   } finally {
     await update($, busy, () => null)
   }
+}
+
+// Queues `/compact` as if typed. The fill shows a dash until the next reply.
+async function compactAsCommand($: EngineInterface): Promise<string> {
+  try {
+    await $.command.run({ command: 'compact', args: '' })
+  } catch (err) {
+    const why = `Compact failed: ${errText(err)}. Type /compact`
+    $.ui.toast(why)
+    return why
+  }
+  const at = await $.clock.now()
+  await update($, ctx, prev => {
+    if (!prev) return prev
+    const { tokens: _t, percent: _p, ...rest } = prev
+    return { ...rest, at }
+  })
+  return 'Compacted.'
 }
 
 async function clear($: EngineInterface): Promise<void> {
@@ -276,7 +297,7 @@ async function handoff($: EngineInterface): Promise<string> {
     await $.store.set(LAST, saved)
     note = { text, file, title }
   } catch (err) {
-    const why = `Handoff failed: ${err instanceof Error ? err.message : String(err)}. Nothing was cleared.`
+    const why = `Handoff failed: ${errText(err)}. Nothing was cleared.`
     $.ui.toast(why)
     return why
   } finally {

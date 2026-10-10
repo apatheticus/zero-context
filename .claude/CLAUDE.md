@@ -34,6 +34,7 @@ npx -y -p typescript@5.6.3 tsc -p .
 - Render hooks only read. `confirm` wears off from a `$.clock.after` callback, never while drawing.
 - `session.measure` fires when a main turn ends (and on a rate-limit tick), never mid-turn. The `turn.step` hook keeps the meter live through a long turn; skip steps with an `agentId`.
 - `/clear` fires no `session.start`. The cleared session starts in the `classic.SessionStart` hook, `source: 'clear'`.
+- `$.session.compact` rejects in a headless host (the desktop app, the SDK): compaction there runs only as a `/compact` turn. `compact` falls back to `$.command.run({ command: 'compact' })` on any rejection. The kit can't reject with that message; a `session.compact` hook that answers `next(e)` stands in.
 - `$.model.fork` must run before the clear: after it there is nothing to fork.
 - `armed` is a module variable: a reload between Handoff and the clear drops it. The file and the next session's Resume are the fallback.
 - A command hook must not await another command. `/zero-context` runs its work off `$.clock.after(0)`.
