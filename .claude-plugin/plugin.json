@@ -1,0 +1,21 @@
+{
+  "name": "zero-context",
+  "version": "0.1.0",
+  "description": "Context meter above the prompt: how full the window is, colored by how much the fill hurts output, with Compact, Clear and Handoff buttons.",
+  "author": {
+    "name": "apatheticus",
+    "url": "https://github.com/apatheticus"
+  },
+  "homepage": "https://github.com/apatheticus/zero-context",
+  "repository": "https://github.com/apatheticus/zero-context",
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "zones": {
+      "type": "string",
+      "title": "Zone knees, in thousands of tokens",
+      "description": "Four numbers, rising: where the bar turns lime, amber, orange and red",
+      "default": "60,120,200,300"
+    }
+  },
+  "license": "MIT"
+}

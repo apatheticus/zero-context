@@ -1,0 +1,14 @@
+{
+  "name": "zero-context",
+  "owner": { "name": "apatheticus", "url": "https://github.com/apatheticus" },
+  "metadata": { "description": "Context meter above the prompt for Claude Code." },
+  "plugins": [
+    {
+      "name": "zero-context",
+      "source": "./",
+      "description": "Mod: a context meter above the prompt, colored by output risk, with Compact, Clear and Handoff.",
+      "version": "0.1.0",
+      "category": "mod"
+    }
+  ]
+}
