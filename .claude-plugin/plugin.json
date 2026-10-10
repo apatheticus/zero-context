@@ -1,6 +1,6 @@
 {
   "name": "zero-context",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Context meter above the prompt: how full the window is, colored by how much the fill hurts output, with Compact, Clear and Handoff buttons.",
   "author": {
     "name": "apatheticus",

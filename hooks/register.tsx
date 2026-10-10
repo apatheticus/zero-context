@@ -154,17 +154,28 @@ async function seed($: EngineInterface): Promise<void> {
 }
 
 // The threshold only moves with the window or a compact: read it again then.
-async function measure($: EngineInterface, c: SessionContextUsage): Promise<void> {
+// A step reads it only then; a turn's end also reads it when it is still unknown.
+async function measure($: EngineInterface, c: SessionContextUsage, isStep = false): Promise<void> {
   const prev = await read($, ctx)
   const isSameWindow = prev?.window === c.window
   const hasDropped = (c.tokens ?? 0) < (prev?.tokens ?? 0)
   let threshold = isSameWindow ? prev?.autoCompact : undefined
-  if (threshold === undefined || !isSameWindow || hasDropped) {
+  if ((threshold === undefined && !isStep) || !isSameWindow || hasDropped) {
     const u = await $.session.usage({ breakdown: 'summary' }).catch(() => null)
     threshold = u?.context.breakdown?.autoCompactThreshold ?? threshold
   }
   const at = await $.clock.now()
   await update($, ctx, () => ctxOf(c, threshold, at))
+}
+
+// Each model request of the main thread: its input side is the fill, as the status
+// line counts it. session.measure fires only when a turn ends, so a long turn needs this.
+async function stepped($: EngineInterface, usage: { input_tokens: number; cache_creation_input_tokens: number; cache_read_input_tokens: number }): Promise<void> {
+  const tokens = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0)
+  if (!tokens) return
+  const window = (await read($, ctx))?.window || (await $.session.usage().catch(() => null))?.context.window
+  if (!window) return
+  await measure($, { tokens, window, percent: (tokens / window) * 100 }, true)
 }
 
 async function checkOffer($: EngineInterface, cwd: string): Promise<void> {
@@ -358,6 +369,12 @@ export const register: Register = (on, options) => {
     const measured = await next(e)
     if (e.changed.includes('context')) await measure($, e.context)
     return measured
+  })
+
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e)
+    if (!e.agentId && result.usage) await stepped($, result.usage).catch(() => undefined)
+    return result
   })
 
   // /clear fires no session.start: this is where the cleared session begins.

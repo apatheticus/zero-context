@@ -15,11 +15,11 @@ const mount = ($: Engine, surface: (typeof SURFACES)[number], over: Record<strin
 // Everything the band drew, Svg sources and alts included.
 const drawn = async (ui: { drawn: () => Promise<unknown> }): Promise<string> => JSON.stringify(await ui.drawn())
 
-type World = { clock: ReturnType<typeof mock.clock>; toasts: string[]; commands: string[]; compacts: string[]; writes: { path: string; text: string }[] }
+type World = { clock: ReturnType<typeof mock.clock>; stepTokens: number; toasts: string[]; commands: string[]; compacts: string[]; writes: { path: string; text: string }[] }
 
 // The engine's side of each call the plugin makes: what core would answer.
 const core = (on: On, store: Record<string, unknown> = {}): World => {
-  const w: World = { clock: mock.clock(on, { now: NOW }), toasts: [], commands: [], compacts: [], writes: [] }
+  const w: World = { clock: mock.clock(on, { now: NOW }), stepTokens: 0, toasts: [], commands: [], compacts: [], writes: [] }
   mock.store(on, store)
   mock.env(on, { HOME })
   on('ui.render', async () => ({ type: 'Box' }) as never)
@@ -49,6 +49,11 @@ const core = (on: On, store: Record<string, unknown> = {}): World => {
     return { value: undefined }
   })
   on('classic.SessionStart', async () => ({}))
+  // One model request, reporting `w.stepTokens` on its input side.
+  on('turn.step', async function* (_$, e) {
+    const usage = { model: 'claude-opus-5-5', input_tokens: 2, cache_creation_input_tokens: 1_000, cache_read_input_tokens: w.stepTokens - 1_002, output_tokens: 500 }
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'tool_use', usage } as never
+  })
   return w
 }
 
@@ -71,6 +76,32 @@ test('after a reply the band shows tokens, percent and the three buttons', async
     expect(await ui.find({ key: 'context-resume' })).toBeUndefined()
     await ui.unmount()
   }
+})
+
+const step = async ($: Engine, w: World, tokens: number, agentId?: string) => {
+  w.stepTokens = tokens
+  const stream = $.turn.step({ turnId: 't', index: 0, model: 'claude-opus-5-5', messageCount: 1, ...(agentId ? { agentId } : {}) })
+  for await (const _ of stream);
+}
+
+test('the meter follows each step of a long turn, not just its end', async ($, on) => {
+  const w = core(on)
+  await start($)
+  await measure($, 104_000)
+  await step($, w, 229_133)
+  const ui = await mount($, 'terminal')
+  expect(await drawn(ui)).toContain('229k/1M 23%')
+  await ui.unmount()
+})
+
+test("a subagent's step leaves the meter alone", async ($, on) => {
+  const w = core(on)
+  await start($)
+  await measure($, 104_000)
+  await step($, w, 50_000, 'a1')
+  const ui = await mount($, 'terminal')
+  expect(await drawn(ui)).toContain('104k/1M')
+  await ui.unmount()
 })
 
 test('before the first reply it shows a dash and an empty bar', async ($, on) => {
